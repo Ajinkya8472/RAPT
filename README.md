@@ -6,8 +6,9 @@ Indian-context identifiers (Aadhaar, PAN, GSTIN, phone, vehicle numbers).
 
 > **Status:** working prototype of the theoretical framework in
 > *"RAPT: Risk-Adaptive Prompt Transformation for Utility-Preserving Privacy
-> Protection of Cloud-LLM Queries with Indian-Context Identifiers"*.
-> This is a demo of the mechanism, not a production privacy tool.
+> Protection of Cloud-LLM Queries with Indian-Context Identifiers"*, with a small
+> labelled evaluation and a real (local) LLM round trip. This is a demo of the
+> mechanism, not a production privacy tool.
 
 ![demo](docs/screenshots/main.png)
 
@@ -27,7 +28,7 @@ flowchart LR
     C --> D[Pick level per span<br/>keep / generalize / surrogate / suppress]
     D --> E[Enforce joint<br/>bit budget]
     E --> F[Sanitized prompt]
-    F --> G[Cloud LLM]
+    F --> G[LLM]
     G --> H[Restore surrogates<br/>from local ledger]
     H --> I[Answer with real values]
 ```
@@ -48,7 +49,7 @@ flowchart LR
 - **Keyed surrogates:** HMAC-SHA256 seeded, format-preserving. Fake Aadhaar
   numbers deliberately fail the Verhoeff checksum.
 - **Ledger and restore:** a local, in-memory map from fake to real values, never
-  sent to the cloud.
+  sent to the LLM.
 
 ## Reproducing the paper's worked example
 
@@ -66,21 +67,70 @@ Input: *"Patient Rahul Mehta, age 43, visited City Care Clinic in Pune on
 115.1 bits → 20.4 bits, with about 86% of importance-weighted utility retained.
 Verified by `test_example.py`.
 
+## Evaluation
+
+`evaluation.py` runs RAPT on 16 hand-labelled prompts and compares three
+strategies: no protection, mask-everything, and RAPT. It is also available as the
+**Evaluation** tab in the UI.
+
+| Metric (GLiNER on) | No protection | Mask everything | RAPT |
+|---|---|---|---|
+| Direct identifiers leaked | 100% | 0% | **0%** |
+| Words of the prompt kept | 100% | 58.8% | **75.3%** |
+| Avg identifying bits left (detected) | 78.6 | 0 | 16.0 |
+
+- **Detection:** recall 98.5%, precision 97.1% with GLiNER (83.8% / 100% with
+  regex only).
+- **Budget compliance:** 100% of prompts, which follows from the algorithm on
+  detected spans and is a sanity check, not an empirical finding.
+- **Privacy–utility curve:** sweeping the anonymity margin b_k from 0 to 26
+  lowers bits sent from 25.3 to 1.6 and utility from 88% to 38%.
+- **Remaining leaks are mostly deliberate.** RAPT keeps quasi-identifiers (for
+  example an age) when the total is already under budget. "Mask everything"
+  leaks less but retains far less of the prompt.
+
+**Caveats:** the 16 prompts are a development set written around the detector's
+formats, so recall is optimistic; "mask everything" has zero model utility by
+definition, so *words kept* is the fairer comparison; and words kept is only a
+crude proxy for task utility.
+
+```bash
+python evaluation.py            # regex only
+python evaluation.py --gliner   # with the neural span model
+```
+
+## Real LLM round trip (Ollama)
+
+The **Cloud & restore** tab can call a local model through Ollama
+(`llama3.2:3b` by default). It sends the sanitized prompt, shows the raw reply
+(with surrogates), the restored reply (real values swapped back), and optionally
+the answer to the original prompt as a baseline.
+
+A local model stands in for the cloud LLM behind the same interface. Small models
+vary between calls and sometimes refuse on their own; refusals appear for the
+original prompt too, so they are not caused by sanitization. Restoration only
+works when the model repeats a surrogate **exactly**.
+
+```bash
+ollama pull llama3.2:3b
+ollama serve
+```
+
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-username>/rapt.git
-cd rapt
-python -m venv .venv
-.venv\Scripts\activate          # Windows  (macOS/Linux: source .venv/bin/activate)
+git clone https://github.com/Ajinkya8472/<repo-name>.git
+cd <repo-name>
 pip install -r requirements.txt
 
 python test_example.py          # should print ALL CHECKS PASSED
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Always launch with `streamlit run app.py`, not by running the file directly.
-The GLiNER model (a few hundred MB) downloads on first use and is optional.
+Always launch with `streamlit run app.py` (or `python -m streamlit run app.py`),
+not by running the file directly. The GLiNER model (a few hundred MB) downloads
+on first use and is optional. If the console prints `torchvision` errors, they
+are harmless; `.streamlit/config.toml` disables the file watcher that causes them.
 
 ## Using the demo
 
@@ -89,8 +139,9 @@ The GLiNER model (a few hundred MB) downloads on first use and is optional.
   per-span cost minimizer, tuned by λ (privacy) and μ (utility).
 - **GLiNER checkbox:** switches name, organization and location detection from
   hardcoded patterns to a neural span model.
+- **LLM backend:** `mock` or `ollama`.
 - **Tabs:** side-by-side view, span table, escalation log, strategy comparison,
-  and the cloud round trip with restore.
+  cloud round trip with restore, and the evaluation.
 
 ## Project structure
 
@@ -103,30 +154,35 @@ The GLiNER model (a few hundred MB) downloads on first use and is optional.
 | `policy.py` | Per-span minimizer and greedy budget loop |
 | `transformer.py` | Surrogates, generalizers, ledger, restore |
 | `pipeline.py` | Ties the steps together |
-| `llm.py` | LLM backend (currently a mock) |
+| `llm.py` | LLM backends (mock and Ollama) |
+| `evaluation.py` | Labelled test set, baselines, metrics, b_k sweep |
 | `app.py` | Streamlit UI |
 | `test_example.py` | Checks the paper's worked example |
 
 ## Current limitations
 
-- **The LLM is mocked.** The round trip works, but no real model answers yet.
 - **Importance scores are fixed** to the paper's hypothetical values, not yet
   computed by leave-one-out with a sentence encoder.
 - **Detection is incomplete.** No passport, bank account, UPI or medical IDs; no
-  street addresses or PIN codes; limited date formats; English only.
+  street addresses or PIN codes; limited date formats ("March 17, 2026" is
+  missed); English only.
 - **Undetected text counts as 0 bits**, so a prompt with unrecognized names can
   still show "within budget". The budget is only as good as the detector.
+- **No coreference:** "Sneha" and "Sneha Kulkarni" receive different surrogates.
+- **No output validation** of the LLM reply yet.
 - **Bit values are design priors** that assume independence between attributes.
-- **No formal guarantee.** This is not differential privacy, formal
-  anonymity, or legal compliance (including DPDP Act compliance).
+- **Small evaluation set**, developed alongside the detector.
+- **No formal guarantee.** This is not differential privacy, formal anonymity,
+  or legal compliance (including DPDP Act compliance).
 
 ## Roadmap
 
 - [ ] Leave-one-out importance with MiniLM, plus a task-conditional box
-- [ ] Real LLM backend (API or Ollama)
 - [ ] Output validation (injection and leak scanning)
-- [ ] More Indian ID validators and address / PIN generalization
+- [ ] More Indian ID validators, date formats, address and PIN generalization
+- [ ] Name coreference within a prompt
 - [ ] Romanized-Hindi normalization and multilingual detection
+- [ ] Evaluation on held-out prompts and real LLM answer-quality comparison
 - [ ] Exact DP solver (Proposition 8) as a reference for the greedy loop
 
 ## Team
@@ -134,6 +190,6 @@ The GLiNER model (a few hundred MB) downloads on first use and is optional.
 Sumit Hirve, Arpit Nainwal, Agam Kadakia, Ajinkya Deshmukh
 MIT School of Computing, MIT ADT University, Pune
 
-![escalation](docs/screenshots/escalation.png)
+## License
 
-![Gliner](docs/screenshots/Gliner.png)
+MIT (see `LICENSE`)
