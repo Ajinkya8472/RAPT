@@ -1,0 +1,17 @@
+#,Gold,Found,Detected,Bits before,Bits after,Within budget,Utility Φ %,Gold leaked (RAPT),Direct leaked (RAPT),Prompt
+1,7,7,7,115.1,20.4,yes,86,1,0,"Patient Rahul Mehta, age 43, visited City Care Clinic in Pun…"
+2,6,6,6,105.1,15.3,yes,86,1,0,"Mr. Sharma, age 52, works at Apex Technologies in Mumbai. PA…"
+3,4,4,5,108.8,10.0,yes,86,0,0,"Invoice for Shri Anil Kapoor, GSTIN 27ABCDE1234F1Z5, vehicle…"
+4,5,5,5,74.7,20.3,yes,89,2,0,"Dr. Meera Nair, aged 38, joined Tata Solutions on 05/06/2024…"
+5,2,2,2,60.8,0.0,yes,80,0,0,My Aadhaar is 2345 6789 0124 and my PAN is ABCDE1234F. Which…
+6,0,0,0,0.0,0.0,yes,100,0,0,Explain how photosynthesis works in simple words.
+7,4,4,4,68.4,20.0,yes,89,2,0,Rahul called from Infosys in Hubli. His PAN is ABCDE1234F.
+8,5,5,5,78.4,19.0,yes,86,1,0,Priya Nair from Apollo Hospital in Chennai emailed priya.nai…
+9,5,5,5,86.4,20.0,yes,86,2,0,Sneha Kulkarni and Rohan Mehta from Infosys met in Nagpur. S…
+10,5,5,6,105.1,15.3,yes,86,1,0,"Patient Anita Desai, 29 years old, lives in Bengaluru. Aadha…"
+11,5,5,5,98.8,20.0,yes,89,2,0,Mrs. Kavita Rao reported that her car KA05MN4321 was hit nea…
+12,4,4,4,68.4,20.0,yes,89,2,0,"Ms. Divya Iyer of State Bank in Chennai, PAN FGHIJ5678K, wan…"
+13,1,1,1,18.0,18.0,yes,100,1,0,Rahul called me yesterday about the invoice.
+14,4,3,3,38.0,20.0,yes,90,3,0,"The surgery for Mr. Gupta was on March 17, 2026 at Apollo Ho…"
+15,6,6,6,170.0,18.0,yes,93,1,0,"Customer Vikram Singh, phone 9988776655, email vikram@exampl…"
+16,5,5,5,62.3,20.3,yes,87,2,0,Meeting with Dr. Rao at Manipal Hospital on 03/04/2026 regar…

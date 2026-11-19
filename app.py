@@ -8,6 +8,7 @@ from transformer import restore
 from llm import call_llm
 from config import bn
 from scoring import action, h, h0, kappa
+from evaluation import evaluate, frontier
 
 st.set_page_config(page_title="RAPT", page_icon="🛡️", layout="wide")
 st.title("🛡️ RAPT: Risk-Adaptive Prompt Transformation")
@@ -45,6 +46,8 @@ with st.sidebar:
     mu = st.slider("μ utility weight", 0.1, 5.0, 1.0, 0.1, disabled=(mode == "budget"))
     p1 = st.checkbox("Assume perfect detection (p = 1)", True)
     use_model = st.checkbox("Use GLiNER span model (slower first run)", False)
+    backend = st.selectbox("LLM backend", ["mock", "ollama"])
+    ollama_model = st.text_input("Ollama model", "llama3.2:3b", disabled=(backend != "ollama"))
     st.markdown("**Legend**")
     for k, lbl in [("KEEP", "kept"), ("GEN1", "generalized"), ("SUR", "surrogate"), ("SUP", "suppressed")]:
         st.markdown(f'<span style="background:{COLORS[k]};color:#111;font-weight:600;'
@@ -77,8 +80,8 @@ st.progress(used, text=f"Budget used: {res['bits_after']:.1f} / {res['bmax']:.1f
                        + ("  ✅ within budget" if res["bits_after"] <= res["bmax"] + 1e-9 else "  ⚠️ over budget"))
 
 # ---------------- tabs ----------------
-t1, t2, t3, t4, t5 = st.tabs(["Side by side", "Span table", "Escalation log",
-                              "Comparison", "Cloud & restore"])
+t1, t2, t3, t4, t5, t6 = st.tabs(["Side by side", "Span table", "Escalation log",
+                              "Comparison", "Cloud & restore", "Evaluation"])
 
 with t1:
     a, b = st.columns(2)
@@ -120,10 +123,60 @@ with t4:
 with t5:
     st.subheader("What the cloud received")
     st.code(res["sanitized"], language=None)
-    reply = call_llm(res["sanitized"], backend="mock")
-    st.subheader("Raw cloud reply (contains surrogates)")
-    st.markdown(reply)
-    st.subheader("Restored reply (shown to you)")
-    st.markdown(restore(reply, res["ledger"]))
-    with st.expander("Ledger (local only, never sent)"):
-        st.json(res["ledger"])
+
+    compare = st.checkbox("Also ask the original prompt (baseline, demo only)", True)
+    if st.button("💬 Ask the LLM"):
+        try:
+            with st.spinner("Waiting for the model (first call can be slow)..."):
+                st.session_state.reply = call_llm(res["sanitized"], backend, ollama_model)
+                st.session_state.reply_for = res["sanitized"]
+                st.session_state.reply_orig = (call_llm(prompt, backend, ollama_model)
+                                               if compare else None)
+        except Exception as e:
+            st.error(f"LLM call failed: {e}")
+
+    reply = st.session_state.get("reply")
+    if reply and st.session_state.get("reply_for") == res["sanitized"]:
+        a, b = st.columns(2)
+        a.subheader("Raw cloud reply (contains surrogates)")
+        a.markdown(reply)
+        b.subheader("Restored reply (shown to you)")
+        b.markdown(restore(reply, res["ledger"]))
+        if st.session_state.get("reply_orig"):
+            st.subheader("Baseline: answer to the original, unprotected prompt")
+            st.markdown(st.session_state.reply_orig)
+            st.caption("Compare with the restored reply: that difference is the real utility cost.")
+        with st.expander("Ledger (local only, never sent)"):
+            st.json(res["ledger"])
+    else:
+        st.info("Press **Ask the LLM** to run the round trip.")
+
+with t6:
+    st.subheader("Mini evaluation on a labelled test set")
+    st.caption("16 hand-written prompts with labelled sensitive items. Uses the current "
+               "sidebar settings (b_k, policy mode, GLiNER on/off).")
+    if st.button("▶ Run evaluation"):
+        with st.spinner("Running 16 prompts..."):
+            st.session_state.ev = evaluate(use_model=use_model, bk=bk, mode=mode)
+            st.session_state.fr = frontier(sample_prompt(), use_model=use_model, mode=mode)
+
+    ev = st.session_state.get("ev")
+    if ev:
+        per, cmp_df, det = ev
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Detection recall", f"{det['recall']:.0f}%")
+        m2.metric("Detection precision", f"{det['precision']:.0f}%")
+        m3.metric("Within budget", f"{det['within']:.0f}%")
+
+        st.markdown("**RAPT vs. baselines**")
+        st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+        st.markdown("**Per-prompt results**")
+        st.dataframe(per, use_container_width=True, hide_index=True)
+
+        fr = st.session_state.fr
+        st.markdown("**Privacy–utility curve** (paper's sample prompt, sweeping b_k)")
+        x, y = st.columns(2)
+        x.caption("Identifying bits sent (lower = more private)")
+        x.line_chart(fr.set_index("b_k")["Bits sent"])
+        y.caption("Utility retained % (higher = more useful)")
+        y.line_chart(fr.set_index("b_k")["Utility %"])
